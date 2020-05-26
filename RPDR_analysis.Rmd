@@ -1,0 +1,162 @@
+---
+title: "RPDR"
+author: "B Rose"
+date: "5/22/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r prep, message = FALSE, warning=FALSE}
+library(tidyverse)
+library(glue)
+library(plotly)
+library(fuzzyjoin)
+```
+
+#Import report card data by season
+```{r data, echo = FALSE}
+#download raw record tables for each season
+report_cards <- 
+  tibble(season = 1:12) %>% 
+  mutate(data = map(season, 
+                    ~as_tibble(
+                      (read_html(glue("https://en.wikipedia.org/wiki/RuPaul%27s_Drag_Race_(season_{.})")) %>%
+                        html_nodes("table.wikitable") %>% 
+                        html_table(header = TRUE, fill = TRUE) 
+                      )[[2]], .name_repair = "unique")))
+
+#manipulation/wrangling record of each individual
+record_book <- tibble()
+for(i in 1:12){
+  unnested <- unnest(report_cards[i,], cols = c(file_contents))
+  
+  piv_table <- unnested %>% 
+    pivot_longer(cols = 3:ncol(unnested), 
+                 names_to = "episode", 
+                 values_to = "place", 
+                 values_drop_na = TRUE) 
+  
+  sum_table <- piv_table %>% 
+    na_if("") %>% 
+    group_by_at(vars(starts_with("Contestant"), season)) %>%
+    summarise(
+      season_episodes = sum(!is.na(episode)) - 1, 
+      safes = sum(place == "SAFE", na.rm = TRUE),
+      wins = sum(place == "WIN", na.rm = TRUE),
+      tops = sum(place == "WIN" | place == "HIGH",na.rm = TRUE),
+      bottoms = sum(place == "BTM2" | place == "LOW" | place == "ELIM" | 
+                      place == "DISQ" | place == "OUT", na.rm = TRUE),
+      epi_elim = sum(place != "Guest" & place != "Miss C", na.rm = TRUE),
+      winner = sum(place == "Winner", na.rm = TRUE)
+    ) %>% 
+    ungroup()
+  
+  colnames(sum_table)[1] <- "Contestant"
+  sum_table$winner <- ifelse(sum_table$winner == 1, TRUE, NA)
+  record_book <- rbind(record_book, sum_table)
+}
+
+record_book$season_episodes <- ifelse(record_book$season %in% c(4, 5, 7, 8), 
+                                      record_book$season_episodes + 1, record_book$season_episodes)
+record_book <- record_book %>% 
+  mutate(pct_season = (epi_elim/season_episodes)*100)
+
+```
+
+#Record book viz exploration
+```{r rb exploration}
+#top 20 tops in a season
+s <- record_book %>% 
+  top_n(20, tops) %>% 
+  ggplot(aes(x = reorder(Contestant, tops), y = tops, fill = as.factor(season))) +
+  geom_bar(stat = "identity") +
+  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, by = 2)) +
+  coord_flip() +
+  labs(title = "Most 'tops' in a season", y = "Times in the top (including wins)", 
+       fill = "Season") +
+  theme_classic() + 
+    theme(axis.title.x = element_text(size = 12),
+          axis.title.y = element_blank(),
+        axis.text = element_text( size = 10), 
+        axis.line = element_line(size = 1), 
+        axis.ticks = element_line(size = 1), 
+        legend.position = "right")
+  
+s
+
+#higheest % of time spent in top
+p <- record_book %>% 
+  top_n(20, tops/epi_elim) %>% 
+  ggplot(aes(x = reorder(Contestant, tops/epi_elim), y = tops/epi_elim*100, fill = as.factor(season))) +
+  geom_bar(stat = "identity", alpha = 0.9) +
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 10)) +
+  coord_flip() +
+  labs(title = "Highest percent of run in the top", y = "% of episodes in the top", 
+       fill = "Season") +
+  theme_classic() + 
+    theme(axis.title.x = element_text(size = 12),
+          axis.title.y = element_blank(),
+        axis.text = element_text( size = 10), 
+        axis.line = element_line(size = 1), 
+        axis.ticks = element_line(size = 1), 
+        legend.position = "right")
+```
+
+#Import general contestant data
+```{r}
+raw <- 
+  tibble(season = 1:12) %>% 
+  mutate(file_contents = map(season, 
+                             ~as_tibble(
+                               (
+                                 read_html(glue(
+                                   "https://en.wikipedia.org/wiki/RuPaul%27s_Drag_Race_(season_{.})"
+                                   )) %>%
+                                   html_nodes("table.wikitable") %>% 
+                                   html_table(header = TRUE, fill = TRUE) 
+                               )[[1]], .name_repair = "unique"
+                             )
+  )) 
+
+general_info <- tibble()
+for(i in 1:12){
+  unnested <- unnest(raw[i,], cols = c(file_contents))
+  colnames(unnested) <- c("Season", "Contestant", "Age", "Hometown", "Outcome")
+  unnested$Age <- str_replace_all(unnested$Age, "\\[[^]]+\\]", "")
+  unnested$Contestant <- str_replace_all(unnested$Contestant, "\\[[^]]+\\]", "")
+  general_info <- bind_rows(general_info, unnested)
+}
+
+contestant_data <- fuzzyjoin::regex_full_join(general_info, record_book, 
+                                              by = c("Contestant", "Season" = "season"),
+                                              ignore_case = TRUE)
+
+
+winners <- contestant_data %>% 
+  filter(winner == TRUE)
+```
+
+
+#exploration
+```{r}
+t <- ggplot(contestant_data, aes(y = as.numeric(Age), x = as.factor(Season), 
+                                 fill = as.factor(Season))) +
+  geom_hline(yintercept = mean(as.numeric(contestant_data$Age)), 
+             size = 1, color = "grey", linetype = "dashed")+
+  geom_boxplot(alpha = 0.6) +
+  labs(title = "RPDR Age Distribution", x = "Season", y = "Age (at time of competition)") +
+  theme_classic() +
+  theme(title = element_text(size = 16),
+        axis.title = element_text(size = 14), 
+        axis.text = element_text(size = 12), 
+        axis.line = element_line(size = 1), 
+        axis.ticks = element_line(size = 1), 
+        legend.position = "none")
+t
+
+
+
+```
