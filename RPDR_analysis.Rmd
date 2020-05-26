@@ -46,7 +46,7 @@ for(i in 1:12){
       season_episodes = sum(!is.na(episode)) - 1, 
       safes = sum(place == "SAFE", na.rm = TRUE),
       wins = sum(place == "WIN", na.rm = TRUE),
-      tops = sum(place == "WIN" | place == "HIGH",na.rm = TRUE),
+      tops = sum(place == "WIN" | place == "HIGH" | place == "TOP2",na.rm = TRUE),
       bottoms = sum(place == "BTM2" | place == "LOW" | place == "ELIM" | 
                       place == "DISQ" | place == "OUT", na.rm = TRUE),
       epi_elim = sum(place != "Guest" & place != "Miss C", na.rm = TRUE),
@@ -115,14 +115,15 @@ p
 
 #highest % in the top of girls who made it to the finale
 q <- record_book %>% 
-  filter(pct_season == 100 & Contestant != "Jackie Cox") %>% 
+  filter(pct_season == 100 & Contestant != "Jackie Cox" & 
+           Contestant != "Sherry Pie") %>% 
   # top_n(20, tops/epi_elim) %>% 
   ggplot(aes(x = reorder(reorder(Contestant, -season), tops/epi_comp), 
              y = tops/epi_comp*100, fill = as.factor(season))) +
   geom_bar(stat = "identity", alpha = 0.9) +
   scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 10)) +
   coord_flip() +
-  labs( 
+  labs(title = "RPDR season finalists: \nPercent of episodes with top placement",
        y = "% of episodes in the top", 
        fill = "Season") +
   theme_classic() + 
@@ -131,7 +132,7 @@ q <- record_book %>%
         axis.text = element_text( size = 10), 
         axis.line = element_line(size = 1), 
         axis.ticks = element_line(size = 1), 
-        legend.position = "right")
+        legend.position = "none")
 q
 
 #season winners
@@ -157,27 +158,29 @@ w
 
 star <- record_book %>%
   replace_na(list(winner = FALSE)) %>% 
-  filter(pct_season == 100 & Contestant != "Jackie Cox") %>% 
+  filter(pct_season == 100 & Contestant != "Jackie Cox" & 
+           Contestant != "Sherry Pie") %>% 
   ggplot(aes(x = fct_reorder(as_factor(season), desc(season)), y = tops/epi_comp*100, 
              color = as.factor(season), shape = winner)) +
-  geom_point(size = 2, alpha = 0.7, stroke = 1.5) +
+  geom_point(size = 3, alpha = 0.7, stroke = 1.5) +
   scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 10)) +
-  labs(x = "Season", y = "% of episodes in the top") +
+  labs(x = "Season", y = "% of episodes in the top", 
+       color = "Season", shape = "Season winner") +
   scale_shape_manual(values = c(1, 8)) +
   coord_flip()+
   theme_classic() +
-  theme(axis.title = element_text(, size = 12), 
+  theme(axis.title = element_text(size = 12), 
         axis.text = element_text( size = 10), 
         axis.line = element_line(size = 1), 
         axis.ticks = element_line(size = 1), 
-        legend.position = "none")
+        legend.position = "right")
 star
 
 ```
 
 ```{r arrange}
-arr <- ggpubr::ggarrange(q, star, ncol = 2, widths = c(2, 1))
-
+arr <- ggpubr::ggarrange(q, star, ncol = 2, widths = c(1, 1), 
+                         align = "h")
 ```
 
 
