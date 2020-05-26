@@ -31,7 +31,7 @@ report_cards <-
 #manipulation/wrangling record of each individual
 record_book <- tibble()
 for(i in 1:12){
-  unnested <- unnest(report_cards[i,], cols = c(file_contents))
+  unnested <- unnest(report_cards[i,], cols = c(data))
   
   piv_table <- unnested %>% 
     pivot_longer(cols = 3:ncol(unnested), 
@@ -64,6 +64,12 @@ record_book$season_episodes <- ifelse(record_book$season %in% c(4, 5, 7, 8),
 record_book <- record_book %>% 
   mutate(pct_season = (epi_elim/season_episodes)*100)
 
+# record_book$tops <- ifelse(record_book$Contestant %in% winners$Contestant.y, 
+#                            record_book$tops + 1, record_book$tops)
+
+record_book$epi_comp <- ifelse(record_book$pct_season == 100 & record_book$season != 12, record_book$epi_elim - 1, 
+                               record_book$epi_elim)
+
 ```
 
 #Record book viz exploration
@@ -71,11 +77,12 @@ record_book <- record_book %>%
 #top 20 tops in a season
 s <- record_book %>% 
   top_n(20, tops) %>% 
-  ggplot(aes(x = reorder(Contestant, tops), y = tops, fill = as.factor(season))) +
-  geom_bar(stat = "identity") +
+  ggplot(aes(x = reorder(reorder(Contestant, -season), tops), 
+             y = tops, fill = as.factor(season))) +
+  geom_bar(stat = "identity", alpha = 0.9) +
   scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, by = 2)) +
   coord_flip() +
-  labs(title = "Most 'tops' in a season", y = "Times in the top (including wins)", 
+  labs(title = "Most 'tops' in a season", y = "Top placements (including wins)", 
        fill = "Season") +
   theme_classic() + 
     theme(axis.title.x = element_text(size = 12),
@@ -89,8 +96,9 @@ s
 
 #higheest % of time spent in top
 p <- record_book %>% 
-  top_n(20, tops/epi_elim) %>% 
-  ggplot(aes(x = reorder(Contestant, tops/epi_elim), y = tops/epi_elim*100, fill = as.factor(season))) +
+  top_n(20, tops/epi_comp) %>% 
+  ggplot(aes(x = reorder(reorder(Contestant, -season), tops/epi_comp), 
+             y = tops/epi_comp*100, fill = as.factor(season))) +
   geom_bar(stat = "identity", alpha = 0.9) +
   scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 10)) +
   coord_flip() +
@@ -103,7 +111,76 @@ p <- record_book %>%
         axis.line = element_line(size = 1), 
         axis.ticks = element_line(size = 1), 
         legend.position = "right")
+p
+
+#highest % in the top of girls who made it to the finale
+q <- record_book %>% 
+  filter(pct_season == 100 & Contestant != "Jackie Cox") %>% 
+  # top_n(20, tops/epi_elim) %>% 
+  ggplot(aes(x = reorder(reorder(Contestant, -season), tops/epi_comp), 
+             y = tops/epi_comp*100, fill = as.factor(season))) +
+  geom_bar(stat = "identity", alpha = 0.9) +
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 10)) +
+  coord_flip() +
+  labs( 
+       y = "% of episodes in the top", 
+       fill = "Season") +
+  theme_classic() + 
+    theme(axis.title.x = element_text(size = 12),
+          axis.title.y = element_blank(),
+        axis.text = element_text( size = 10), 
+        axis.line = element_line(size = 1), 
+        axis.ticks = element_line(size = 1), 
+        legend.position = "right")
+q
+
+#season winners
+w <- record_book %>% 
+  filter(Contestant %in% winners$Contestant.y) %>% 
+  # top_n(20, tops/epi_elim) %>% 
+  ggplot(aes(x = reorder(Contestant, tops/epi_elim), y = tops/epi_elim*100, fill = as.factor(season))) +
+  geom_bar(stat = "identity", alpha = 0.9) +
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 10)) +
+  coord_flip() +
+  labs(title = "Season winners: \n Percent of episodes spent in the top", 
+       y = "% of episodes in the top", 
+       fill = "Season") +
+  theme_classic() + 
+    theme(axis.title.x = element_text(size = 12),
+          axis.title.y = element_blank(),
+        axis.text = element_text( size = 10), 
+        axis.line = element_line(size = 1), 
+        axis.ticks = element_line(size = 1), 
+        legend.position = "right")
+w
+
+
+star <- record_book %>%
+  replace_na(list(winner = FALSE)) %>% 
+  filter(pct_season == 100 & Contestant != "Jackie Cox") %>% 
+  ggplot(aes(x = fct_reorder(as_factor(season), desc(season)), y = tops/epi_comp*100, 
+             color = as.factor(season), shape = winner)) +
+  geom_point(size = 2, alpha = 0.7, stroke = 1.5) +
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 10)) +
+  labs(x = "Season", y = "% of episodes in the top") +
+  scale_shape_manual(values = c(1, 8)) +
+  coord_flip()+
+  theme_classic() +
+  theme(axis.title = element_text(, size = 12), 
+        axis.text = element_text( size = 10), 
+        axis.line = element_line(size = 1), 
+        axis.ticks = element_line(size = 1), 
+        legend.position = "none")
+star
+
 ```
+
+```{r arrange}
+arr <- ggpubr::ggarrange(q, star, ncol = 2, widths = c(2, 1))
+
+```
+
+
 
 #Import general contestant data
 ```{r}
@@ -156,7 +233,5 @@ t <- ggplot(contestant_data, aes(y = as.numeric(Age), x = as.factor(Season),
         axis.ticks = element_line(size = 1), 
         legend.position = "none")
 t
-
-
 
 ```
